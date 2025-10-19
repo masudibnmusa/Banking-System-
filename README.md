@@ -1,4 +1,4 @@
-# Professional Banking Management System
+# Banking Management System
 
 ![C Language](https://img.shields.io/badge/Language-C-blue)
 ![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20macOS-green)
