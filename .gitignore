@@ -1,0 +1,27 @@
+# Compiled binaries
+banking_system
+banking_system.exe
+*.o
+*.obj
+
+# Data files (generated at runtime)
+bank_accounts.dat
+transactions.log
+statement_*.txt
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific
+.DS_Store
+Thumbs.db
