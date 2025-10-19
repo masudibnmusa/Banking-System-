@@ -5,11 +5,14 @@
 #include <time.h>
 
 #define FILENAME "bank_accounts.dat"
-#define MAX_ACCOUNTS 1000
-#define MIN_ACCOUNT_NUMBER 1000
-#define MAX_ACCOUNT_NUMBER 9999
+#define TRANSACTION_LOG "transactions.log"
+#define MAX_ACCOUNTS 10000
+#define MIN_ACCOUNT_NUMBER 100000
+#define MAX_ACCOUNT_NUMBER 999999
 #define MIN_BALANCE 0
-#define MAX_NAME_LENGTH 50
+#define MAX_NAME_LENGTH 100
+#define PASSWORD_LENGTH 50
+#define MAX_LOGIN_ATTEMPTS 3
 
 // Platform-specific clear screen
 #ifdef _WIN32
@@ -18,62 +21,120 @@
     #define CLEAR_SCREEN "clear"
 #endif
 
+// ANSI Color codes for better UI (works on most modern terminals)
+#define COLOR_RESET   "\x1b[0m"
+#define COLOR_RED     "\x1b[31m"
+#define COLOR_GREEN   "\x1b[32m"
+#define COLOR_YELLOW  "\x1b[33m"
+#define COLOR_BLUE    "\x1b[34m"
+#define COLOR_MAGENTA "\x1b[35m"
+#define COLOR_CYAN    "\x1b[36m"
+#define COLOR_WHITE   "\x1b[37m"
+#define COLOR_BOLD    "\x1b[1m"
+
+// Account status
+typedef enum {
+    ACCOUNT_ACTIVE = 1,
+    ACCOUNT_SUSPENDED = 0,
+    ACCOUNT_CLOSED = -1
+} AccountStatus;
+
+// Transaction types
+typedef enum {
+    TRANSACTION_DEPOSIT,
+    TRANSACTION_WITHDRAWAL,
+    TRANSACTION_TRANSFER_OUT,
+    TRANSACTION_TRANSFER_IN,
+    TRANSACTION_ACCOUNT_CREATED
+} TransactionType;
+
 // Account structure
 typedef struct {
     int account_number;
     char name[MAX_NAME_LENGTH];
+    char email[MAX_NAME_LENGTH];
+    char phone[20];
     double balance;
-    char password[20];
+    char password[PASSWORD_LENGTH];
+    AccountStatus status;
+    time_t created_date;
+    time_t last_accessed;
+    int failed_login_attempts;
 } Account;
 
+// Transaction structure
+typedef struct {
+    int transaction_id;
+    int account_number;
+    TransactionType type;
+    double amount;
+    double balance_after;
+    int related_account;  // For transfers
+    time_t timestamp;
+    char description[100];
+} Transaction;
+
 // Function prototypes
+void showWelcomeScreen();
+void showMainMenu();
 void createAccount();
 void depositMoney();
 void withdrawMoney();
 void checkBalance();
 void transferFunds();
 void displayAllAccounts();
+void viewAccountDetails();
+void changePassword();
+void viewTransactionHistory();
+void generateAccountStatement();
+
+// Utility functions
 long findAccount(int account_number);
-int authenticateAccount(int account_number);
+int authenticateAccount(int account_number, int max_attempts);
+void logTransaction(int account_number, TransactionType type, double amount,
+                   double balance_after, int related_account, const char *description);
+int generateAccountNumber();
+void getCurrentDateTime(char *buffer);
+
+// Input validation functions
 int getIntInput(const char *prompt, int min, int max);
 double getDoubleInput(const char *prompt, double min, double max);
 void getStringInput(const char *prompt, char *buffer, int max_length);
+void getEmailInput(const char *prompt, char *buffer, int max_length);
+void getPhoneInput(const char *prompt, char *buffer, int max_length);
+void getPasswordInput(const char *prompt, char *buffer, int max_length);
+int validateEmail(const char *email);
+int validatePhone(const char *phone);
+
+// UI functions
 void clearInputBuffer();
 void initializeFile();
-void getPasswordInput(const char *prompt, char *buffer, int max_length);
 void clearScreen();
 void pauseScreen();
+void printHeader(const char *title);
+void printSeparator(char c, int length);
+void printSuccess(const char *message);
+void printError(const char *message);
+void printWarning(const char *message);
+void printInfo(const char *message);
 
 int main() {
     int choice;
 
-    clearScreen();
-    printf("=== Welcome to Banking System ===\n");
-    printf("Initializing...\n");
-
-    // Initialize file if it doesn't exist
-    initializeFile();
-
     // Initialize random seed once
     srand(time(NULL));
 
-    pauseScreen();
+    // Initialize files
+    initializeFile();
+
+    showWelcomeScreen();
 
     while (1) {
-        clearScreen();
-        printf("\n=== Main Menu ===\n");
-        printf("1. Create New Account\n");
-        printf("2. Deposit Money\n");
-        printf("3. Withdraw Money\n");
-        printf("4. Check Balance\n");
-        printf("5. Transfer Funds\n");
-        printf("6. Display All Accounts\n");
-        printf("7. Exit\n");
-        printf("\nEnter your choice: ");
+        showMainMenu();
 
         if (scanf("%d", &choice) != 1) {
             clearInputBuffer();
-            printf("\nInvalid input! Please enter a number.\n");
+            printError("Invalid input! Please enter a number.");
             pauseScreen();
             continue;
         }
@@ -107,17 +168,41 @@ int main() {
                 break;
             case 6:
                 clearScreen();
-                displayAllAccounts();
+                viewAccountDetails();
                 pauseScreen();
                 break;
             case 7:
                 clearScreen();
-                printf("\n=== Thank You ===\n");
-                printf("Thank you for using our banking system!\n");
-                printf("Have a great day!\n\n");
+                changePassword();
+                pauseScreen();
+                break;
+            case 8:
+                clearScreen();
+                viewTransactionHistory();
+                pauseScreen();
+                break;
+            case 9:
+                clearScreen();
+                generateAccountStatement();
+                pauseScreen();
+                break;
+            case 10:
+                clearScreen();
+                displayAllAccounts();
+                pauseScreen();
+                break;
+            case 0:
+                clearScreen();
+                printHeader("THANK YOU");
+                printf("\n");
+                printInfo("Thank you for banking with us!");
+                printInfo("Your security is our priority.");
+                printf("\n");
+                printSeparator('=', 60);
+                printf("\n");
                 exit(0);
             default:
-                printf("\nInvalid choice! Please try again.\n");
+                printError("Invalid choice! Please select a valid option.");
                 pauseScreen();
         }
     }
@@ -125,69 +210,197 @@ int main() {
     return 0;
 }
 
+void showWelcomeScreen() {
+    clearScreen();
+    printf("\n");
+    printSeparator('=', 70);
+    printf("\n");
+    printf("%s%s", COLOR_CYAN, COLOR_BOLD);
+    printf("               PROFESSIONAL BANKING MANAGEMENT SYSTEM\n");
+    printf("%s", COLOR_RESET);
+    printSeparator('=', 70);
+    printf("\n\n");
+    printf("%s", COLOR_YELLOW);
+    printf("                    Secure • Reliable • Professional\n");
+    printf("%s", COLOR_RESET);
+    printf("\n");
+    printInfo("System initializing...");
+    printf("\n");
+    time_t now = time(NULL);
+    char datetime[50];
+    strftime(datetime, sizeof(datetime), "%A, %B %d, %Y - %I:%M %p", localtime(&now));
+    printf("                    %s\n", datetime);
+    printf("\n");
+    printSeparator('=', 70);
+    printf("\n");
+    pauseScreen();
+}
+
+void showMainMenu() {
+    clearScreen();
+    printHeader("MAIN MENU");
+    printf("\n");
+    printf("  %s[ACCOUNT OPERATIONS]%s\n", COLOR_CYAN, COLOR_RESET);
+    printf("  1. Create New Account\n");
+    printf("  2. Deposit Money\n");
+    printf("  3. Withdraw Money\n");
+    printf("  4. Check Balance\n");
+    printf("  5. Transfer Funds\n");
+    printf("\n");
+    printf("  %s[ACCOUNT MANAGEMENT]%s\n", COLOR_CYAN, COLOR_RESET);
+    printf("  6. View Account Details\n");
+    printf("  7. Change Password\n");
+    printf("  8. Transaction History\n");
+    printf("  9. Generate Statement\n");
+    printf("\n");
+    printf("  %s[ADMINISTRATION]%s\n", COLOR_CYAN, COLOR_RESET);
+    printf("  10. Display All Accounts (Admin)\n");
+    printf("\n");
+    printf("  %s0. Exit%s\n", COLOR_RED, COLOR_RESET);
+    printf("\n");
+    printSeparator('-', 60);
+    printf("\n%sEnter your choice:%s ", COLOR_BOLD, COLOR_RESET);
+}
+
 void clearScreen() {
     system(CLEAR_SCREEN);
 }
 
 void pauseScreen() {
-    printf("\nPress Enter to continue...");
-    clearInputBuffer();
+    printf("\n");
+    printSeparator('-', 60);
+    printf("\n%sPress Enter to continue...%s", COLOR_YELLOW, COLOR_RESET);
+    getchar();
+}
+
+void printHeader(const char *title) {
+    printSeparator('=', 60);
+    printf("\n");
+    printf("%s%s", COLOR_BOLD, COLOR_CYAN);
+    int padding = (60 - strlen(title)) / 2;
+    for (int i = 0; i < padding; i++) printf(" ");
+    printf("%s\n", title);
+    printf("%s", COLOR_RESET);
+    printSeparator('=', 60);
+}
+
+void printSeparator(char c, int length) {
+    for (int i = 0; i < length; i++) {
+        printf("%c", c);
+    }
+    printf("\n");
+}
+
+void printSuccess(const char *message) {
+    printf("%s✓ %s%s\n", COLOR_GREEN, message, COLOR_RESET);
+}
+
+void printError(const char *message) {
+    printf("%s✗ ERROR: %s%s\n", COLOR_RED, message, COLOR_RESET);
+}
+
+void printWarning(const char *message) {
+    printf("%s⚠ WARNING: %s%s\n", COLOR_YELLOW, message, COLOR_RESET);
+}
+
+void printInfo(const char *message) {
+    printf("%sℹ %s%s\n", COLOR_BLUE, message, COLOR_RESET);
 }
 
 void initializeFile() {
     FILE *file = fopen(FILENAME, "ab");
     if (file != NULL) {
         fclose(file);
-        printf("Bank data file initialized successfully.\n");
-    } else {
-        printf("Error initializing bank data file.\n");
     }
+
+    FILE *log = fopen(TRANSACTION_LOG, "a");
+    if (log != NULL) {
+        fclose(log);
+    }
+}
+
+int generateAccountNumber() {
+    int account_number;
+    do {
+        account_number = MIN_ACCOUNT_NUMBER + (rand() % (MAX_ACCOUNT_NUMBER - MIN_ACCOUNT_NUMBER + 1));
+    } while (findAccount(account_number) != -1);
+
+    return account_number;
 }
 
 void createAccount() {
     Account new_account;
     FILE *file;
 
-    printf("=== Create New Account ===\n\n");
+    printHeader("CREATE NEW ACCOUNT");
+    printf("\n");
 
-    // Generate random account number
-    new_account.account_number = MIN_ACCOUNT_NUMBER + (rand() % (MAX_ACCOUNT_NUMBER - MIN_ACCOUNT_NUMBER + 1));
+    // Generate unique account number
+    new_account.account_number = generateAccountNumber();
 
-    // Check if account number already exists
-    while (findAccount(new_account.account_number) != -1) {
-        new_account.account_number = MIN_ACCOUNT_NUMBER + (rand() % (MAX_ACCOUNT_NUMBER - MIN_ACCOUNT_NUMBER + 1));
-    }
+    // Get account holder details
+    getStringInput("Full Name: ", new_account.name, MAX_NAME_LENGTH);
+    getEmailInput("Email Address: ", new_account.email, MAX_NAME_LENGTH);
+    getPhoneInput("Phone Number: ", new_account.phone, 20);
 
-    getStringInput("Enter account holder name: ", new_account.name, MAX_NAME_LENGTH);
-
-    // Set initial balance
+    // Set initial values
     new_account.balance = 0.0;
+    new_account.status = ACCOUNT_ACTIVE;
+    new_account.created_date = time(NULL);
+    new_account.last_accessed = time(NULL);
+    new_account.failed_login_attempts = 0;
 
-    getPasswordInput("Set account password: ", new_account.password, 20);
+    printf("\n");
+    printInfo("Setting up secure password...");
+    getPasswordInput("Set Password (min 6 characters): ", new_account.password, PASSWORD_LENGTH);
+
+    if (strlen(new_account.password) < 6) {
+        printError("Password must be at least 6 characters long!");
+        return;
+    }
 
     // Open file in append binary mode
     file = fopen(FILENAME, "ab");
     if (file == NULL) {
-        printf("\nError: Unable to open file!\n");
+        printError("Unable to access database!");
         return;
     }
 
     // Write account to file
     if (fwrite(&new_account, sizeof(Account), 1, file) == 1) {
-        printf("\n");
-        printf("========================================\n");
-        printf("   Account Created Successfully!\n");
-        printf("========================================\n");
-        printf("Account Number: %d\n", new_account.account_number);
-        printf("Account Holder: %s\n", new_account.name);
-        printf("Initial Balance: $%.2f\n", new_account.balance);
-        printf("========================================\n");
-        printf("\n*** IMPORTANT: Please remember your account number and password! ***\n");
-    } else {
-        printf("\nError: Unable to create account!\n");
-    }
+        fclose(file);
 
-    fclose(file);
+        // Log transaction
+        logTransaction(new_account.account_number, TRANSACTION_ACCOUNT_CREATED,
+                      0.0, 0.0, 0, "Account created");
+
+        printf("\n");
+        printSeparator('=', 60);
+        printf("\n");
+        printSuccess("ACCOUNT CREATED SUCCESSFULLY!");
+        printf("\n");
+        printSeparator('-', 60);
+        printf("\n");
+        printf("  %sAccount Number:%s %d\n", COLOR_BOLD, COLOR_RESET, new_account.account_number);
+        printf("  %sAccount Holder:%s %s\n", COLOR_BOLD, COLOR_RESET, new_account.name);
+        printf("  %sEmail:%s %s\n", COLOR_BOLD, COLOR_RESET, new_account.email);
+        printf("  %sPhone:%s %s\n", COLOR_BOLD, COLOR_RESET, new_account.phone);
+        printf("  %sInitial Balance:%s $%.2f\n", COLOR_BOLD, COLOR_RESET, new_account.balance);
+        printf("  %sAccount Status:%s Active\n", COLOR_BOLD, COLOR_RESET);
+
+        char date_str[50];
+        strftime(date_str, sizeof(date_str), "%Y-%m-%d %H:%M:%S",
+                localtime(&new_account.created_date));
+        printf("  %sCreated On:%s %s\n", COLOR_BOLD, COLOR_RESET, date_str);
+        printf("\n");
+        printSeparator('-', 60);
+        printf("\n");
+        printWarning("IMPORTANT: Please remember your account number and password!");
+        printInfo("Keep your credentials secure and confidential.");
+    } else {
+        fclose(file);
+        printError("Unable to create account!");
+    }
 }
 
 void depositMoney() {
@@ -197,53 +410,63 @@ void depositMoney() {
     FILE *file;
     long position;
 
-    printf("=== Deposit Money ===\n\n");
+    printHeader("DEPOSIT MONEY");
+    printf("\n");
 
-    account_number = getIntInput("Enter account number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
+    account_number = getIntInput("Account Number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
 
-    if (!authenticateAccount(account_number)) {
-        printf("\nAuthentication failed! Access denied.\n");
+    if (!authenticateAccount(account_number, MAX_LOGIN_ATTEMPTS)) {
+        printError("Authentication failed!");
         return;
     }
 
     position = findAccount(account_number);
     if (position == -1) {
-        printf("\nError: Account not found!\n");
+        printError("Account not found!");
         return;
     }
 
-    amount = getDoubleInput("\nEnter amount to deposit: $", 0.01, 1000000.0);
+    amount = getDoubleInput("\nDeposit Amount: $", 0.01, 1000000.0);
 
     // Open file for reading and writing
     file = fopen(FILENAME, "r+b");
     if (file == NULL) {
-        printf("\nError: Unable to open file!\n");
+        printError("Unable to access database!");
         return;
     }
 
-    // Move to the account position
     fseek(file, position, SEEK_SET);
     fread(&account, sizeof(Account), 1, file);
 
     double old_balance = account.balance;
-
-    // Update balance
     account.balance += amount;
+    account.last_accessed = time(NULL);
 
-    // Write back to file
     fseek(file, position, SEEK_SET);
     fwrite(&account, sizeof(Account), 1, file);
-
     fclose(file);
 
+    // Log transaction
+    logTransaction(account_number, TRANSACTION_DEPOSIT, amount,
+                  account.balance, 0, "Cash deposit");
+
     printf("\n");
-    printf("========================================\n");
-    printf("     Deposit Successful!\n");
-    printf("========================================\n");
-    printf("Amount Deposited: $%.2f\n", amount);
-    printf("Previous Balance: $%.2f\n", old_balance);
-    printf("New Balance:      $%.2f\n", account.balance);
-    printf("========================================\n");
+    printSeparator('=', 60);
+    printf("\n");
+    printSuccess("DEPOSIT SUCCESSFUL!");
+    printf("\n");
+    printSeparator('-', 60);
+    printf("\n");
+    printf("  Transaction Type:    Deposit\n");
+    printf("  Amount Deposited:    %s$%.2f%s\n", COLOR_GREEN, amount, COLOR_RESET);
+    printf("  Previous Balance:    $%.2f\n", old_balance);
+    printf("  Current Balance:     %s$%.2f%s\n", COLOR_BOLD, account.balance, COLOR_RESET);
+
+    char datetime[50];
+    getCurrentDateTime(datetime);
+    printf("  Transaction Time:    %s\n", datetime);
+    printf("\n");
+    printSeparator('=', 60);
 }
 
 void withdrawMoney() {
@@ -253,25 +476,25 @@ void withdrawMoney() {
     FILE *file;
     long position;
 
-    printf("=== Withdraw Money ===\n\n");
+    printHeader("WITHDRAW MONEY");
+    printf("\n");
 
-    account_number = getIntInput("Enter account number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
+    account_number = getIntInput("Account Number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
 
-    if (!authenticateAccount(account_number)) {
-        printf("\nAuthentication failed! Access denied.\n");
+    if (!authenticateAccount(account_number, MAX_LOGIN_ATTEMPTS)) {
+        printError("Authentication failed!");
         return;
     }
 
     position = findAccount(account_number);
     if (position == -1) {
-        printf("\nError: Account not found!\n");
+        printError("Account not found!");
         return;
     }
 
-    // Open file for reading
     file = fopen(FILENAME, "rb");
     if (file == NULL) {
-        printf("\nError: Unable to open file!\n");
+        printError("Unable to access database!");
         return;
     }
 
@@ -279,40 +502,55 @@ void withdrawMoney() {
     fread(&account, sizeof(Account), 1, file);
     fclose(file);
 
-    printf("\nCurrent balance: $%.2f\n", account.balance);
-    amount = getDoubleInput("Enter amount to withdraw: $", 0.01, account.balance);
+    printf("\nAvailable Balance: %s$%.2f%s\n", COLOR_BOLD, account.balance, COLOR_RESET);
 
-    if (amount > account.balance) {
-        printf("\nError: Insufficient funds!\n");
+    if (account.balance <= 0) {
+        printError("Insufficient funds! Cannot withdraw.");
         return;
     }
 
-    // Open file for reading and writing
+    amount = getDoubleInput("Withdrawal Amount: $", 0.01, account.balance);
+
+    if (amount > account.balance) {
+        printError("Insufficient funds!");
+        return;
+    }
+
     file = fopen(FILENAME, "r+b");
     if (file == NULL) {
-        printf("\nError: Unable to open file!\n");
+        printError("Unable to access database!");
         return;
     }
 
     double old_balance = account.balance;
-
-    // Update balance
     account.balance -= amount;
+    account.last_accessed = time(NULL);
 
-    // Write back to file
     fseek(file, position, SEEK_SET);
     fwrite(&account, sizeof(Account), 1, file);
-
     fclose(file);
 
+    // Log transaction
+    logTransaction(account_number, TRANSACTION_WITHDRAWAL, amount,
+                  account.balance, 0, "Cash withdrawal");
+
     printf("\n");
-    printf("========================================\n");
-    printf("    Withdrawal Successful!\n");
-    printf("========================================\n");
-    printf("Amount Withdrawn: $%.2f\n", amount);
-    printf("Previous Balance: $%.2f\n", old_balance);
-    printf("New Balance:      $%.2f\n", account.balance);
-    printf("========================================\n");
+    printSeparator('=', 60);
+    printf("\n");
+    printSuccess("WITHDRAWAL SUCCESSFUL!");
+    printf("\n");
+    printSeparator('-', 60);
+    printf("\n");
+    printf("  Transaction Type:    Withdrawal\n");
+    printf("  Amount Withdrawn:    %s$%.2f%s\n", COLOR_RED, amount, COLOR_RESET);
+    printf("  Previous Balance:    $%.2f\n", old_balance);
+    printf("  Current Balance:     %s$%.2f%s\n", COLOR_BOLD, account.balance, COLOR_RESET);
+
+    char datetime[50];
+    getCurrentDateTime(datetime);
+    printf("  Transaction Time:    %s\n", datetime);
+    printf("\n");
+    printSeparator('=', 60);
 }
 
 void checkBalance() {
@@ -321,39 +559,53 @@ void checkBalance() {
     FILE *file;
     long position;
 
-    printf("=== Check Balance ===\n\n");
+    printHeader("BALANCE INQUIRY");
+    printf("\n");
 
-    account_number = getIntInput("Enter account number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
+    account_number = getIntInput("Account Number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
 
-    if (!authenticateAccount(account_number)) {
-        printf("\nAuthentication failed! Access denied.\n");
+    if (!authenticateAccount(account_number, MAX_LOGIN_ATTEMPTS)) {
+        printError("Authentication failed!");
         return;
     }
 
     position = findAccount(account_number);
     if (position == -1) {
-        printf("\nError: Account not found!\n");
+        printError("Account not found!");
         return;
     }
 
-    file = fopen(FILENAME, "rb");
+    file = fopen(FILENAME, "r+b");
     if (file == NULL) {
-        printf("\nError: Unable to open file!\n");
+        printError("Unable to access database!");
         return;
     }
 
     fseek(file, position, SEEK_SET);
     fread(&account, sizeof(Account), 1, file);
+
+    account.last_accessed = time(NULL);
+    fseek(file, position, SEEK_SET);
+    fwrite(&account, sizeof(Account), 1, file);
     fclose(file);
 
     printf("\n");
-    printf("========================================\n");
-    printf("      Account Information\n");
-    printf("========================================\n");
-    printf("Account Number:  %d\n", account.account_number);
-    printf("Account Holder:  %s\n", account.name);
-    printf("Current Balance: $%.2f\n", account.balance);
-    printf("========================================\n");
+    printSeparator('=', 60);
+    printf("\n");
+    printf("%s           ACCOUNT BALANCE DETAILS%s\n", COLOR_BOLD, COLOR_RESET);
+    printf("\n");
+    printSeparator('-', 60);
+    printf("\n");
+    printf("  Account Number:      %d\n", account.account_number);
+    printf("  Account Holder:      %s\n", account.name);
+    printf("  Current Balance:     %s$%.2f%s\n", COLOR_GREEN, account.balance, COLOR_RESET);
+    printf("  Account Status:      %sActive%s\n", COLOR_GREEN, COLOR_RESET);
+
+    char datetime[50];
+    getCurrentDateTime(datetime);
+    printf("  Query Time:          %s\n", datetime);
+    printf("\n");
+    printSeparator('=', 60);
 }
 
 void transferFunds() {
@@ -363,76 +615,85 @@ void transferFunds() {
     FILE *file;
     long from_position, to_position;
 
-    printf("=== Transfer Funds ===\n\n");
+    printHeader("FUND TRANSFER");
+    printf("\n");
 
-    // Source account
-    from_account = getIntInput("Enter your account number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
+    from_account = getIntInput("Your Account Number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
 
-    if (!authenticateAccount(from_account)) {
-        printf("\nAuthentication failed! Access denied.\n");
+    if (!authenticateAccount(from_account, MAX_LOGIN_ATTEMPTS)) {
+        printError("Authentication failed!");
         return;
     }
 
     from_position = findAccount(from_account);
     if (from_position == -1) {
-        printf("\nError: Your account not found!\n");
+        printError("Your account not found!");
         return;
     }
 
-    // Destination account
-    to_account = getIntInput("\nEnter destination account number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
+    to_account = getIntInput("\nRecipient Account Number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
 
     to_position = findAccount(to_account);
     if (to_position == -1) {
-        printf("\nError: Destination account not found!\n");
+        printError("Recipient account not found!");
         return;
     }
 
     if (from_account == to_account) {
-        printf("\nError: Cannot transfer to the same account!\n");
+        printError("Cannot transfer to the same account!");
         return;
     }
 
-    // Read source account
     file = fopen(FILENAME, "rb");
     if (file == NULL) {
-        printf("\nError: Unable to open file!\n");
+        printError("Unable to access database!");
         return;
     }
 
     fseek(file, from_position, SEEK_SET);
     fread(&from_acc, sizeof(Account), 1, file);
-    fclose(file);
-
-    printf("\nYour current balance: $%.2f\n", from_acc.balance);
-    amount = getDoubleInput("Enter amount to transfer: $", 0.01, from_acc.balance);
-
-    if (amount > from_acc.balance) {
-        printf("\nError: Insufficient funds!\n");
-        return;
-    }
-
-    // Read destination account
-    file = fopen(FILENAME, "rb");
-    if (file == NULL) {
-        printf("\nError: Unable to open file!\n");
-        return;
-    }
 
     fseek(file, to_position, SEEK_SET);
     fread(&to_acc, sizeof(Account), 1, file);
     fclose(file);
 
-    double old_balance = from_acc.balance;
+    printf("\nYour Available Balance: %s$%.2f%s\n", COLOR_BOLD, from_acc.balance, COLOR_RESET);
+    printf("Recipient: %s%s%s\n", COLOR_CYAN, to_acc.name, COLOR_RESET);
 
-    // Update balances
+    amount = getDoubleInput("\nTransfer Amount: $", 0.01, from_acc.balance);
+
+    if (amount > from_acc.balance) {
+        printError("Insufficient funds!");
+        return;
+    }
+
+    // Confirmation
+    printf("\n");
+    printWarning("Please confirm the transfer details:");
+    printf("  Transfer Amount: $%.2f\n", amount);
+    printf("  To: %s (Account: %d)\n", to_acc.name, to_account);
+    printf("\nConfirm transfer? (Y/N): ");
+
+    char confirm;
+    scanf(" %c", &confirm);
+    clearInputBuffer();
+
+    if (confirm != 'Y' && confirm != 'y') {
+        printWarning("Transfer cancelled by user.");
+        return;
+    }
+
+    double old_from_balance = from_acc.balance;
+    double old_to_balance = to_acc.balance;
+
     from_acc.balance -= amount;
     to_acc.balance += amount;
+    from_acc.last_accessed = time(NULL);
+    to_acc.last_accessed = time(NULL);
 
-    // Write back to file
     file = fopen(FILENAME, "r+b");
     if (file == NULL) {
-        printf("\nError: Unable to open file!\n");
+        printError("Unable to access database!");
         return;
     }
 
@@ -441,19 +702,324 @@ void transferFunds() {
 
     fseek(file, to_position, SEEK_SET);
     fwrite(&to_acc, sizeof(Account), 1, file);
+    fclose(file);
 
+    // Log transactions
+    char desc[100];
+    snprintf(desc, sizeof(desc), "Transfer to account %d", to_account);
+    logTransaction(from_account, TRANSACTION_TRANSFER_OUT, amount,
+                  from_acc.balance, to_account, desc);
+
+    snprintf(desc, sizeof(desc), "Transfer from account %d", from_account);
+    logTransaction(to_account, TRANSACTION_TRANSFER_IN, amount,
+                  to_acc.balance, from_account, desc);
+
+    printf("\n");
+    printSeparator('=', 60);
+    printf("\n");
+    printSuccess("TRANSFER SUCCESSFUL!");
+    printf("\n");
+    printSeparator('-', 60);
+    printf("\n");
+    printf("  Transaction Type:    Fund Transfer\n");
+    printf("  Amount Transferred:  %s$%.2f%s\n", COLOR_YELLOW, amount, COLOR_RESET);
+    printf("  From Account:        %d\n", from_account);
+    printf("  To Account:          %d (%s)\n", to_account, to_acc.name);
+    printf("  Your Previous Bal:   $%.2f\n", old_from_balance);
+    printf("  Your Current Bal:    %s$%.2f%s\n", COLOR_BOLD, from_acc.balance, COLOR_RESET);
+
+    char datetime[50];
+    getCurrentDateTime(datetime);
+    printf("  Transaction Time:    %s\n", datetime);
+    printf("\n");
+    printSeparator('=', 60);
+}
+
+void viewAccountDetails() {
+    int account_number;
+    Account account;
+    FILE *file;
+    long position;
+
+    printHeader("ACCOUNT DETAILS");
+    printf("\n");
+
+    account_number = getIntInput("Account Number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
+
+    if (!authenticateAccount(account_number, MAX_LOGIN_ATTEMPTS)) {
+        printError("Authentication failed!");
+        return;
+    }
+
+    position = findAccount(account_number);
+    if (position == -1) {
+        printError("Account not found!");
+        return;
+    }
+
+    file = fopen(FILENAME, "r+b");
+    if (file == NULL) {
+        printError("Unable to access database!");
+        return;
+    }
+
+    fseek(file, position, SEEK_SET);
+    fread(&account, sizeof(Account), 1, file);
+
+    account.last_accessed = time(NULL);
+    fseek(file, position, SEEK_SET);
+    fwrite(&account, sizeof(Account), 1, file);
     fclose(file);
 
     printf("\n");
-    printf("========================================\n");
-    printf("     Transfer Successful!\n");
-    printf("========================================\n");
-    printf("Amount Transferred: $%.2f\n", amount);
-    printf("From Account:       %d\n", from_account);
-    printf("To Account:         %d (%s)\n", to_account, to_acc.name);
-    printf("Previous Balance:   $%.2f\n", old_balance);
-    printf("New Balance:        $%.2f\n", from_acc.balance);
-    printf("========================================\n");
+    printSeparator('=', 60);
+    printf("\n");
+    printf("%s         COMPLETE ACCOUNT INFORMATION%s\n", COLOR_BOLD, COLOR_RESET);
+    printf("\n");
+    printSeparator('-', 60);
+    printf("\n");
+    printf("  %sAccount Details:%s\n", COLOR_CYAN, COLOR_RESET);
+    printf("    Account Number:    %d\n", account.account_number);
+    printf("    Account Holder:    %s\n", account.name);
+    printf("    Email Address:     %s\n", account.email);
+    printf("    Phone Number:      %s\n", account.phone);
+    printf("\n");
+    printf("  %sFinancial Information:%s\n", COLOR_CYAN, COLOR_RESET);
+    printf("    Current Balance:   %s$%.2f%s\n", COLOR_GREEN, account.balance, COLOR_RESET);
+    printf("    Account Status:    %s%s%s\n", COLOR_GREEN, "Active", COLOR_RESET);
+    printf("\n");
+    printf("  %sAccount Activity:%s\n", COLOR_CYAN, COLOR_RESET);
+
+    char created[50], accessed[50];
+    strftime(created, sizeof(created), "%Y-%m-%d %H:%M:%S", localtime(&account.created_date));
+    strftime(accessed, sizeof(accessed), "%Y-%m-%d %H:%M:%S", localtime(&account.last_accessed));
+
+    printf("    Created On:        %s\n", created);
+    printf("    Last Accessed:     %s\n", accessed);
+    printf("\n");
+    printSeparator('=', 60);
+}
+
+void changePassword() {
+    int account_number;
+    Account account;
+    FILE *file;
+    long position;
+    char old_password[PASSWORD_LENGTH];
+    char new_password[PASSWORD_LENGTH];
+    char confirm_password[PASSWORD_LENGTH];
+
+    printHeader("CHANGE PASSWORD");
+    printf("\n");
+
+    account_number = getIntInput("Account Number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
+
+    position = findAccount(account_number);
+    if (position == -1) {
+        printError("Account not found!");
+        return;
+    }
+
+    file = fopen(FILENAME, "rb");
+    if (file == NULL) {
+        printError("Unable to access database!");
+        return;
+    }
+
+    fseek(file, position, SEEK_SET);
+    fread(&account, sizeof(Account), 1, file);
+    fclose(file);
+
+    getPasswordInput("\nCurrent Password: ", old_password, PASSWORD_LENGTH);
+
+    if (strcmp(account.password, old_password) != 0) {
+        printError("Current password is incorrect!");
+        return;
+    }
+
+    getPasswordInput("New Password (min 6 characters): ", new_password, PASSWORD_LENGTH);
+
+    if (strlen(new_password) < 6) {
+        printError("New password must be at least 6 characters long!");
+        return;
+    }
+
+    getPasswordInput("Confirm New Password: ", confirm_password, PASSWORD_LENGTH);
+
+    if (strcmp(new_password, confirm_password) != 0) {
+        printError("Passwords do not match!");
+        return;
+    }
+
+    strcpy(account.password, new_password);
+    account.last_accessed = time(NULL);
+
+    file = fopen(FILENAME, "r+b");
+    if (file == NULL) {
+        printError("Unable to access database!");
+        return;
+    }
+
+    fseek(file, position, SEEK_SET);
+    fwrite(&account, sizeof(Account), 1, file);
+    fclose(file);
+
+    printf("\n");
+    printSeparator('=', 60);
+    printf("\n");
+    printSuccess("PASSWORD CHANGED SUCCESSFULLY!");
+    printf("\n");
+    printInfo("Your password has been updated securely.");
+    printWarning("Please keep your new password confidential.");
+    printf("\n");
+    printSeparator('=', 60);
+}
+
+void viewTransactionHistory() {
+    int account_number;
+    FILE *log;
+    char line[500];
+    int count = 0;
+
+    printHeader("TRANSACTION HISTORY");
+    printf("\n");
+
+    account_number = getIntInput("Account Number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
+
+    if (!authenticateAccount(account_number, MAX_LOGIN_ATTEMPTS)) {
+        printError("Authentication failed!");
+        return;
+    }
+
+    log = fopen(TRANSACTION_LOG, "r");
+    if (log == NULL) {
+        printInfo("No transaction history found.");
+        return;
+    }
+
+    printf("\n");
+    printSeparator('-', 90);
+    printf("%-20s %-15s %-12s %-15s %-25s\n",
+           "Date & Time", "Type", "Amount", "Balance", "Description");
+    printSeparator('-', 90);
+
+    while (fgets(line, sizeof(line), log)) {
+        int acc_num;
+        if (sscanf(line, "Account: %d", &acc_num) == 1 && acc_num == account_number) {
+            printf("%s", line);
+            count++;
+        }
+    }
+
+    fclose(log);
+
+    printSeparator('-', 90);
+    if (count == 0) {
+        printInfo("No transactions found for this account.");
+    } else {
+        printf("Total Transactions: %d\n", count);
+    }
+    printf("\n");
+}
+
+void generateAccountStatement() {
+    int account_number;
+    Account account;
+    FILE *file, *log, *statement;
+    long position;
+    char filename[100];
+    char line[500];
+    int trans_count = 0;
+
+    printHeader("GENERATE ACCOUNT STATEMENT");
+    printf("\n");
+
+    account_number = getIntInput("Account Number: ", MIN_ACCOUNT_NUMBER, MAX_ACCOUNT_NUMBER);
+
+    if (!authenticateAccount(account_number, MAX_LOGIN_ATTEMPTS)) {
+        printError("Authentication failed!");
+        return;
+    }
+
+    position = findAccount(account_number);
+    if (position == -1) {
+        printError("Account not found!");
+        return;
+    }
+
+    file = fopen(FILENAME, "rb");
+    if (file == NULL) {
+        printError("Unable to access database!");
+        return;
+    }
+
+    fseek(file, position, SEEK_SET);
+    fread(&account, sizeof(Account), 1, file);
+    fclose(file);
+
+    // Create statement file
+    snprintf(filename, sizeof(filename), "statement_%d.txt", account_number);
+    statement = fopen(filename, "w");
+    if (statement == NULL) {
+        printError("Unable to create statement file!");
+        return;
+    }
+
+    // Write statement header
+    fprintf(statement, "===============================================================\n");
+    fprintf(statement, "              BANK ACCOUNT STATEMENT\n");
+    fprintf(statement, "===============================================================\n\n");
+
+    char datetime[50];
+    getCurrentDateTime(datetime);
+    fprintf(statement, "Statement Generated: %s\n\n", datetime);
+
+    fprintf(statement, "ACCOUNT INFORMATION:\n");
+    fprintf(statement, "-----------------------------------------------------------\n");
+    fprintf(statement, "Account Number:    %d\n", account.account_number);
+    fprintf(statement, "Account Holder:    %s\n", account.name);
+    fprintf(statement, "Email:             %s\n", account.email);
+    fprintf(statement, "Phone:             %s\n", account.phone);
+    fprintf(statement, "Current Balance:   $%.2f\n", account.balance);
+    fprintf(statement, "Account Status:    Active\n\n");
+
+    fprintf(statement, "TRANSACTION HISTORY:\n");
+    fprintf(statement, "-----------------------------------------------------------\n");
+
+    // Read transaction log
+    log = fopen(TRANSACTION_LOG, "r");
+    if (log != NULL) {
+        while (fgets(line, sizeof(line), log)) {
+            int acc_num;
+            if (sscanf(line, "Account: %d", &acc_num) == 1 && acc_num == account_number) {
+                fprintf(statement, "%s", line);
+                trans_count++;
+            }
+        }
+        fclose(log);
+    }
+
+    if (trans_count == 0) {
+        fprintf(statement, "No transactions found.\n");
+    }
+
+    fprintf(statement, "\n-----------------------------------------------------------\n");
+    fprintf(statement, "Total Transactions: %d\n", trans_count);
+    fprintf(statement, "===============================================================\n");
+    fprintf(statement, "         Thank you for banking with us!\n");
+    fprintf(statement, "===============================================================\n");
+
+    fclose(statement);
+
+    printf("\n");
+    printSeparator('=', 60);
+    printf("\n");
+    printSuccess("STATEMENT GENERATED SUCCESSFULLY!");
+    printf("\n");
+    printInfo("Statement has been saved to:");
+    printf("  %s%s%s\n", COLOR_CYAN, filename, COLOR_RESET);
+    printf("\n");
+    printSeparator('=', 60);
 }
 
 void displayAllAccounts() {
@@ -461,34 +1027,57 @@ void displayAllAccounts() {
     FILE *file;
     int count = 0;
     double total_balance = 0.0;
+    char password[PASSWORD_LENGTH];
 
-    printf("=== All Accounts ===\n\n");
+    printHeader("ALL ACCOUNTS (ADMIN ACCESS)");
+    printf("\n");
 
-    file = fopen(FILENAME, "rb");
-    if (file == NULL) {
-        printf("Error: Unable to open file!\n");
+    printWarning("Administrative access required!");
+    getPasswordInput("Enter Admin Password: ", password, PASSWORD_LENGTH);
+
+    // Simple admin password check (in production, use proper authentication)
+    if (strcmp(password, "admin123") != 0) {
+        printError("Invalid admin password!");
         return;
     }
 
-    printf("%-15s %-30s %-15s\n", "Account Number", "Account Holder", "Balance");
-    printf("----------------------------------------------------------------\n");
+    file = fopen(FILENAME, "rb");
+    if (file == NULL) {
+        printError("Unable to access database!");
+        return;
+    }
+
+    printf("\n");
+    printSeparator('=', 100);
+    printf("%-10s %-25s %-30s %-15s %-12s\n",
+           "Acc No.", "Name", "Email", "Phone", "Balance");
+    printSeparator('=', 100);
 
     while (fread(&account, sizeof(Account), 1, file) == 1) {
-        printf("%-15d %-30s $%-14.2f\n",
-               account.account_number, account.name, account.balance);
+        printf("%-10d %-25s %-30s %-15s %s$%-11.2f%s\n",
+               account.account_number,
+               account.name,
+               account.email,
+               account.phone,
+               COLOR_GREEN,
+               account.balance,
+               COLOR_RESET);
         count++;
         total_balance += account.balance;
     }
 
     fclose(file);
 
-    printf("----------------------------------------------------------------\n");
+    printSeparator('=', 100);
 
     if (count == 0) {
-        printf("No accounts found in the system.\n");
+        printInfo("No accounts found in the system.");
     } else {
-        printf("Total Accounts: %d\n", count);
-        printf("Total Balance:  $%.2f\n", total_balance);
+        printf("\n");
+        printf("  %sTotal Accounts:%s %d\n", COLOR_BOLD, COLOR_RESET, count);
+        printf("  %sTotal Deposits:%s %s$%.2f%s\n", COLOR_BOLD, COLOR_RESET,
+               COLOR_GREEN, total_balance, COLOR_RESET);
+        printf("\n");
     }
 }
 
@@ -515,11 +1104,12 @@ long findAccount(int account_number) {
     return -1;
 }
 
-int authenticateAccount(int account_number) {
-    char password[20];
+int authenticateAccount(int account_number, int max_attempts) {
+    char password[PASSWORD_LENGTH];
     Account account;
     FILE *file;
     long position;
+    int attempts = 0;
 
     position = findAccount(account_number);
     if (position == -1) {
@@ -538,16 +1128,58 @@ int authenticateAccount(int account_number) {
     }
     fclose(file);
 
-    getPasswordInput("Enter password: ", password, 20);
+    while (attempts < max_attempts) {
+        getPasswordInput("Enter Password: ", password, PASSWORD_LENGTH);
 
-    if (strcmp(account.password, password) == 0) {
-        return 1;
-    } else {
-        return 0;
+        if (strcmp(account.password, password) == 0) {
+            printSuccess("Authentication successful!");
+            return 1;
+        } else {
+            attempts++;
+            if (attempts < max_attempts) {
+                printError("Incorrect password!");
+                printf("Attempts remaining: %d\n", max_attempts - attempts);
+            }
+        }
     }
+
+    printError("Maximum login attempts exceeded!");
+    printWarning("Account temporarily locked for security.");
+    return 0;
 }
 
-// Input helper functions
+void logTransaction(int account_number, TransactionType type, double amount,
+                   double balance_after, int related_account, const char *description) {
+    FILE *log = fopen(TRANSACTION_LOG, "a");
+    if (log == NULL) {
+        return;
+    }
+
+    char datetime[50];
+    getCurrentDateTime(datetime);
+
+    const char *type_str;
+    switch (type) {
+        case TRANSACTION_DEPOSIT: type_str = "DEPOSIT"; break;
+        case TRANSACTION_WITHDRAWAL: type_str = "WITHDRAWAL"; break;
+        case TRANSACTION_TRANSFER_OUT: type_str = "TRANSFER OUT"; break;
+        case TRANSACTION_TRANSFER_IN: type_str = "TRANSFER IN"; break;
+        case TRANSACTION_ACCOUNT_CREATED: type_str = "ACCOUNT CREATED"; break;
+        default: type_str = "UNKNOWN"; break;
+    }
+
+    fprintf(log, "Account: %d | %s | %-15s | $%-10.2f | Balance: $%-10.2f | %s\n",
+            account_number, datetime, type_str, amount, balance_after, description);
+
+    fclose(log);
+}
+
+void getCurrentDateTime(char *buffer) {
+    time_t now = time(NULL);
+    strftime(buffer, 50, "%Y-%m-%d %H:%M:%S", localtime(&now));
+}
+
+// Input validation functions
 int getIntInput(const char *prompt, int min, int max) {
     int value;
     while (1) {
@@ -560,7 +1192,7 @@ int getIntInput(const char *prompt, int min, int max) {
         } else {
             clearInputBuffer();
         }
-        printf("Invalid input! Please enter a number between %d and %d.\n", min, max);
+        printf("Invalid input! Please enter a number between %d and %d.", min, max);
     }
 }
 
@@ -576,37 +1208,84 @@ double getDoubleInput(const char *prompt, double min, double max) {
         } else {
             clearInputBuffer();
         }
-        printf("Invalid input! Please enter an amount between $%.2f and $%.2f.\n", min, max);
+        printf("Invalid amount! Range: $%.2f - $%.2f", min, max);
     }
 }
 
 void getStringInput(const char *prompt, char *buffer, int max_length) {
-    printf("%s", prompt);
-    fgets(buffer, max_length, stdin);
+    while (1) {
+        printf("%s", prompt);
+        fgets(buffer, max_length, stdin);
+        buffer[strcspn(buffer, "\n")] = '\0';
 
-    // Remove newline character
-    buffer[strcspn(buffer, "\n")] = '\0';
+        // Trim whitespace
+        char *start = buffer;
+        while (isspace((unsigned char)*start)) start++;
 
-    // Remove leading/trailing whitespace
-    char *start = buffer;
-    while (isspace((unsigned char)*start)) start++;
+        char *end = buffer + strlen(buffer) - 1;
+        while (end > start && isspace((unsigned char)*end)) end--;
+        *(end + 1) = '\0';
 
-    char *end = buffer + strlen(buffer) - 1;
-    while (end > start && isspace((unsigned char)*end)) end--;
+        if (start != buffer) {
+            memmove(buffer, start, strlen(start) + 1);
+        }
 
-    *(end + 1) = '\0';
+        if (strlen(buffer) > 0) {
+            return;
+        }
+        printError("Input cannot be empty!");
+    }
+}
 
-    if (start != buffer) {
-        memmove(buffer, start, end - start + 2);
+void getEmailInput(const char *prompt, char *buffer, int max_length) {
+    while (1) {
+        getStringInput(prompt, buffer, max_length);
+        if (validateEmail(buffer)) {
+            return;
+        }
+        printError("Invalid email format! Please try again.");
+    }
+}
+
+void getPhoneInput(const char *prompt, char *buffer, int max_length) {
+    while (1) {
+        getStringInput(prompt, buffer, max_length);
+        if (validatePhone(buffer)) {
+            return;
+        }
+        printError("Invalid phone format! Use digits only (10-15 digits).");
     }
 }
 
 void getPasswordInput(const char *prompt, char *buffer, int max_length) {
     printf("%s", prompt);
     fgets(buffer, max_length, stdin);
-
-    // Remove newline character
     buffer[strcspn(buffer, "\n")] = '\0';
+}
+
+int validateEmail(const char *email) {
+    // Simple email validation: contains @ and .
+    const char *at = strchr(email, '@');
+    const char *dot = strrchr(email, '.');
+
+    if (at && dot && at < dot && at != email && dot[1] != '\0') {
+        return 1;
+    }
+    return 0;
+}
+
+int validatePhone(const char *phone) {
+    int len = strlen(phone);
+    if (len < 10 || len > 15) {
+        return 0;
+    }
+
+    for (int i = 0; i < len; i++) {
+        if (!isdigit(phone[i]) && phone[i] != '+' && phone[i] != '-' && phone[i] != ' ') {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 void clearInputBuffer() {
