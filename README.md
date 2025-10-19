@@ -1,44 +1,69 @@
-# Banking System
+# Professional Banking Management System
 
-A comprehensive C-based banking application that simulates core banking operations using file I/O, structures, and secure input handling. This system demonstrates professional C programming practices with robust error handling and data persistence.
+![C Language](https://img.shields.io/badge/Language-C-blue)
+![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20Windows%20%7C%20macOS-green)
+![License](https://img.shields.io/badge/License-MIT-yellow)
 
-## 🚀 Features
+A sophisticated banking system implemented in C featuring comprehensive account management, transaction logging, administrative controls, and a professional user interface with color-coded output.
 
-- **Account Management**
-  - Create new bank accounts with auto-generated account numbers
-  - Secure password authentication for all transactions
-  - View account information and balances
+## ✨ Features
 
-- **Financial Operations**
-  - Deposit money with balance validation
-  - Withdraw funds with overdraft protection
-  - Transfer funds between accounts
-  - Real-time balance checking
+### 🔐 Account Management
+- **Account Creation** with auto-generated 6-digit account numbers
+- **Secure Authentication** with password protection and login attempts tracking
+- **Account Status Management** (Active/Suspended/Closed)
+- **Complete Profile Management** with email and phone validation
+- **Password Change** functionality with confirmation
 
-- **Security & Validation**
-  - Password-protected account access
-  - Input sanitization and buffer overflow protection
-  - Range validation for all numeric inputs
-  - Secure file-based data storage
+### 💰 Financial Operations
+- **Deposit & Withdrawal** with real-time balance updates
+- **Fund Transfers** between accounts with confirmation prompts
+- **Balance Inquiry** with detailed account information
+- **Transaction Limits** and validation checks
 
-- **Data Persistence**
-  - Binary file storage for account records
-  - Random access file operations for efficient updates
-  - Persistent data across application sessions
+### 📊 Reporting & Analytics
+- **Transaction History** with detailed logging
+- **Account Statements** generation in text format
+- **Admin Dashboard** for system overview
+- **Real-time Balance Tracking**
 
-## 🛠️ Technical Implementation
+### 🛡️ Security Features
+- **Password Authentication** with attempt limiting
+- **Input Validation** and sanitization
+- **Transaction Logging** for audit trails
+- **Secure File Operations**
+- **Data Persistence** with binary file storage
 
-### Core Components
-- **Structures**: `Account` structure containing account details
-- **File I/O**: Binary file operations with random access
-- **Input Handling**: Secure, validated user input functions
-- **Error Handling**: Comprehensive error checking and recovery
+### 🎨 User Experience
+- **Color-coded Interface** with ANSI colors
+- **Cross-platform Compatibility** (Windows/Linux/macOS)
+- **Professional UI** with headers and separators
+- **Clear Navigation** and menu system
 
-### Data Structure
+## 🏗️ System Architecture
+
+### Data Structures
 ```c
 typedef struct {
     int account_number;
     char name[MAX_NAME_LENGTH];
+    char email[MAX_NAME_LENGTH];
+    char phone[20];
     double balance;
-    char password[20];
+    char password[PASSWORD_LENGTH];
+    AccountStatus status;
+    time_t created_date;
+    time_t last_accessed;
+    int failed_login_attempts;
 } Account;
+
+typedef struct {
+    int transaction_id;
+    int account_number;
+    TransactionType type;
+    double amount;
+    double balance_after;
+    int related_account;
+    time_t timestamp;
+    char description[100];
+} Transaction;
